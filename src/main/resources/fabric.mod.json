@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "bin_pvp_bot",
+  "version": "1.0.0",
+  "name": "BinStyle PvP Bot",
+  "description": "AI Bot that fights like Bin.",
+  "authors": ["Bin"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.bin.pvpbot.PvPBotMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
