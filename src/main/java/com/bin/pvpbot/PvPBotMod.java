@@ -28,41 +28,77 @@ public class PvPBotMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
+package com.bin.pvpbot;
+
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.command.CommandRegistryAccess;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.mob.ZombieEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.ItemEnchantmentsComponent;
+import net.minecraft.enchantment.Enchantment;
+import net.minecraft.enchantment.Enchantments;
+import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
+import net.minecraft.util.TypeFilter;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class PvPBotMod implements ModInitializer {
+
+    private static final String BOT_TAG = "BinBot";
+
+    @Override
+    public void onInitialize() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("bot")
                 .then(CommandManager.literal("start")
-                    .executes(context -> spawnBots(context.getSource(), registryAccess, 1))
+                    .executes(ctx -> spawnBots(ctx.getSource(), registryAccess, 1))
                     .then(CommandManager.argument("count", IntegerArgumentType.integer(1, 10))
-                        .executes(context -> spawnBots(
-                            context.getSource(), registryAccess,
-                            IntegerArgumentType.getInteger(context, "count")
+                        .executes(ctx -> spawnBots(
+                            ctx.getSource(), registryAccess,
+                            IntegerArgumentType.getInteger(ctx, "count")
                         ))
                     )
                 )
                 .then(CommandManager.literal("kill")
-                    .executes(context -> killBots(context.getSource()))
+                    .executes(ctx -> killBots(ctx.getSource()))
                 )
                 .then(CommandManager.literal("list")
-                    .executes(context -> listBots(context.getSource()))
+                    .executes(ctx -> listBots(ctx.getSource()))
                 )
             );
         });
     }
 
     private int spawnBots(ServerCommandSource source,
-                          net.minecraft.registry.DynamicRegistryManager registryAccess,
+                          CommandRegistryAccess registryAccess,
                           int count) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+
         ServerPlayerEntity player = source.getPlayerOrThrow();
         ServerWorld world = source.getWorld();
 
-        var reg = registryAccess.getOrThrow(RegistryKeys.ENCHANTMENT);
-        RegistryEntry<Enchantment> protection = reg.getOrThrow(Enchantments.PROTECTION);
+        var reg = world.getRegistryManager().getOrThrow(RegistryKeys.ENCHANTMENT);
+        RegistryEntry<Enchantment> protection  = reg.getOrThrow(Enchantments.PROTECTION);
         RegistryEntry<Enchantment> sharpness   = reg.getOrThrow(Enchantments.SHARPNESS);
-        RegistryEntry<Enchantment> unbreaking   = reg.getOrThrow(Enchantments.UNBREAKING);
-        RegistryEntry<Enchantment> featherFall  = reg.getOrThrow(Enchantments.FEATHER_FALLING);
+        RegistryEntry<Enchantment> unbreaking  = reg.getOrThrow(Enchantments.UNBREAKING);
+        RegistryEntry<Enchantment> featherFall = reg.getOrThrow(Enchantments.FEATHER_FALLING);
 
         for (int i = 0; i < count; i++) {
-            ZombieEntity bot = new ZombieEntity(net.minecraft.entity.EntityType.ZOMBIE, world);
+            ZombieEntity bot = new ZombieEntity(EntityType.ZOMBIE, world);
 
             double angle = (2 * Math.PI / Math.max(count, 1)) * i;
             bot.refreshPositionAndAngles(
@@ -84,11 +120,11 @@ public class PvPBotMod implements ModInitializer {
             for (EquipmentSlot slot : EquipmentSlot.values())
                 bot.setEquipmentDropChance(slot, 0f);
 
-            bot.getAttributeInstance(EntityAttributes.MAX_HEALTH).setBaseValue(40.0);
+            setAttr(bot.getAttributeInstance(EntityAttributes.MAX_HEALTH),    40.0);
+            setAttr(bot.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED), 0.35);
+            setAttr(bot.getAttributeInstance(EntityAttributes.ATTACK_DAMAGE),  8.0);
+            setAttr(bot.getAttributeInstance(EntityAttributes.FOLLOW_RANGE),  64.0);
             bot.setHealth(40.0f);
-            bot.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED).setBaseValue(0.35);
-            bot.getAttributeInstance(EntityAttributes.ATTACK_DAMAGE).setBaseValue(8.0);
-            bot.getAttributeInstance(EntityAttributes.FOLLOW_RANGE).setBaseValue(64.0);
 
             world.spawnEntity(bot);
             bot.setTarget(player);
@@ -101,11 +137,7 @@ public class PvPBotMod implements ModInitializer {
     }
 
     private int killBots(ServerCommandSource source) {
-        ServerWorld world = source.getWorld();
-        List<ZombieEntity> bots = world.getEntitiesByType(
-            net.minecraft.entity.EntityType.ZOMBIE,
-            e -> e.getCustomName() != null && e.getCustomName().getString().contains(BOT_TAG)
-        );
+        List<ZombieEntity> bots = getBots(source.getWorld());
         if (bots.isEmpty()) {
             source.sendFeedback(() -> Text.literal("§e[BinBot] Нет активных ботов."), false);
             return 0;
@@ -117,11 +149,7 @@ public class PvPBotMod implements ModInitializer {
     }
 
     private int listBots(ServerCommandSource source) {
-        ServerWorld world = source.getWorld();
-        List<ZombieEntity> bots = world.getEntitiesByType(
-            net.minecraft.entity.EntityType.ZOMBIE,
-            e -> e.getCustomName() != null && e.getCustomName().getString().contains(BOT_TAG)
-        );
+        List<ZombieEntity> bots = getBots(source.getWorld());
         if (bots.isEmpty()) {
             source.sendFeedback(() -> Text.literal("§e[BinBot] Нет активных ботов."), false);
         } else {
@@ -135,6 +163,19 @@ public class PvPBotMod implements ModInitializer {
         return bots.size();
     }
 
+    private List<ZombieEntity> getBots(ServerWorld world) {
+        List<ZombieEntity> result = new ArrayList<>();
+        world.getEntitiesByType(TypeFilter.instanceOf(ZombieEntity.class), e -> true)
+             .stream()
+             .filter(e -> e.getCustomName() != null && e.getCustomName().getString().contains(BOT_TAG))
+             .forEach(result::add);
+        return result;
+    }
+
+    private void setAttr(EntityAttributeInstance inst, double value) {
+        if (inst != null) inst.setBaseValue(value);
+    }
+
     private ItemStack enchant(ItemStack stack,
                                RegistryEntry<Enchantment> e1, int l1,
                                RegistryEntry<Enchantment> e2, int l2) {
@@ -144,4 +185,4 @@ public class PvPBotMod implements ModInitializer {
         stack.set(DataComponentTypes.ENCHANTMENTS, b.build());
         return stack;
     }
-              }
+}
