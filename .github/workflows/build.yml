@@ -1,0 +1,70 @@
+name: Build BinStyle PvP Bot
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.8'
+
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.8
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build
+        run: ./gradlew build --no-daemon --stacktrace
+        env:
+          GRADLE_OPTS: "-Xmx4g -Xms512m"
+
+      - name: Verify JAR
+        run: |
+          JAR=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-dev.jar" | head -1)
+          [ -z "$JAR" ] && echo "❌ JAR not found!" && exit 1
+          [ $(stat -c%s "$JAR") -lt 1000 ] && echo "❌ JAR too small!" && exit 1
+          echo "✅ $JAR ($(du -sh $JAR | cut -f1))"
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin_pvp_bot-${{ github.run_number }}
+          path: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
+            !build/libs/*-dev.jar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish release (on tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
+            !build/libs/*-dev.jar
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          make_latest: true
